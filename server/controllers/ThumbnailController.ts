@@ -26,7 +26,7 @@ const colorSchemeDescriptions = {
 
 export const generateThumbnail = async (req: Request, res: Response) => {
     try {
-        console.log('📦 Request body:', req.body);
+        
         
         const { userId } = req.session || {};
         if (!userId) {
@@ -42,7 +42,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
             text_overlay
         } = req.body;
 
-        // 🔥 BULLETPROOF STRING CONVERSION - FIXES YOUR 500 ERROR
+       
         const cleanStyle = typeof style === 'string' && style.trim() ? style.trim() : 'Bold & Graphic';
         const cleanAspect = typeof aspect_ratio === 'string' && aspect_ratio.trim() ? aspect_ratio.trim() : '16:9';
         const cleanColor = typeof color_scheme === 'string' && color_scheme.trim() ? color_scheme.trim() : 'vibrant';
@@ -52,15 +52,15 @@ export const generateThumbnail = async (req: Request, res: Response) => {
             title: title || '',
             prompt_used: user_prompt || '',
             user_prompt: user_prompt || '',
-            style: cleanStyle,           // ✅ ALWAYS STRING
-            aspect_ratio: cleanAspect,   // ✅ ALWAYS STRING
-            color_scheme: cleanColor,    // ✅ ALWAYS STRING
+            style: cleanStyle,           
+            aspect_ratio: cleanAspect,   
+            color_scheme: cleanColor,    
             text_overlay: text_overlay || true,
             isGenerating: true
         };
 
         const thumbnail = await Thumbnail.create(thumbnailData);
-        console.log('✅ Thumbnail created:', thumbnail._id);
+        
 
         // SAFE prompt building
         const safeStyle = cleanStyle;
@@ -86,7 +86,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         const [width, height] = (aspectMap[cleanAspect] || '1024x576').split('x').map(Number);
         const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${Date.now()}&nologo=true&model=flux`;
         
-        console.log('🌐 Calling Pollinations.ai:', url);
+        
         
         const { data: imageBuffer } = await axios.get(url, { 
             responseType: 'arraybuffer', 
@@ -94,7 +94,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         });
         
         const finalBuffer = Buffer.from(imageBuffer);
-        console.log('✅ Image generated successfully');
+        
 
         // CLOUDINARY UPLOAD
         const filename = `thumbnail-${Date.now()}.png`;
@@ -103,7 +103,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         fs.writeFileSync(filepath, finalBuffer);
 
         const uploadResult = await cloudinary.uploader.upload(filepath, { resource_type: 'image' });
-        console.log('☁️ Cloudinary upload success:', uploadResult.url);
+        
 
         // UPDATE THUMBNAIL
         thumbnail.image_url = uploadResult.url;
@@ -112,11 +112,11 @@ export const generateThumbnail = async (req: Request, res: Response) => {
 
         fs.unlinkSync(filepath);
         
-        console.log('🎉 Thumbnail generation COMPLETE');
+        
         res.json({ message: 'Thumbnail Generated', thumbnail });
 
     } catch (error: any) {
-        console.error('💥 FULL ERROR:', error);
+        console.error(' FULL ERROR:', error);
         res.status(500).json({ message: error.message });
     }
 };
