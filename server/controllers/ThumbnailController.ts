@@ -26,7 +26,7 @@ const colorSchemeDescriptions = {
 
 export const generateThumbnail = async (req: Request, res: Response) => {
     try {
-        console.log('📦 Request body:', req.body);
+        
 
         const { userId } = req.session || {};
         if (!userId) {
@@ -42,7 +42,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
             text_overlay
         } = req.body;
 
-        // 🔥 BULLETPROOF STRING CONVERSION
+        
         const cleanStyle = typeof style === 'string' && style.trim() ? style.trim() : 'Bold & Graphic';
         const cleanAspect = typeof aspect_ratio === 'string' && aspect_ratio.trim() ? aspect_ratio.trim() : '16:9';
         const cleanColor = typeof color_scheme === 'string' && color_scheme.trim() ? color_scheme.trim() : 'vibrant';
@@ -60,7 +60,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         };
 
         const thumbnail = await Thumbnail.create(thumbnailData);
-        console.log('✅ Thumbnail created:', thumbnail._id);
+        
 
         // SAFE prompt building
         const safeStyle = cleanStyle;
@@ -75,7 +75,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         }
         prompt += ` Thumbnail ${cleanAspect}, visually stunning, designed to maximize click-through rate. Bold, professional, impossible to ignore.`;
 
-        console.log('🎨 Generated prompt:', prompt);
+       
 
         // POLLINATIONS.AI
         const aspectMap: Record<string, string> = {
@@ -86,7 +86,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         const [width, height] = (aspectMap[cleanAspect] || '1024x576').split('x').map(Number);
         const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${Date.now()}&nologo=true&model=flux`;
 
-        console.log('🌐 Calling Pollinations.ai:', url);
+        
 
         const { data: imageBuffer } = await axios.get(url, {
             responseType: 'arraybuffer',
@@ -94,9 +94,9 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         });
 
         const finalBuffer = Buffer.from(imageBuffer);
-        console.log('✅ Image generated successfully');
+        
 
-        // 🔥 VERCEL COMPATIBLE - DIRECT BUFFER UPLOAD (NO FILESYSTEM)
+        // VERCEL COMPATIBLE - DIRECT BUFFER UPLOAD (NO FILESYSTEM)
         const uploadResult = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
                 { resource_type: 'image' },
