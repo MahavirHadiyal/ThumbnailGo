@@ -3,7 +3,7 @@ import Thumbnail from "../models/Thumbnail.js";
 import path from "node:path";
 import axios from "axios";
 import fs from 'fs'
-import {v2 as cloudinary} from 'cloudinary'
+import { v2 as cloudinary } from 'cloudinary'
 
 const stylePrompts = {
     'Bold & Graphic': 'eye-catching thumbnail, bold typography, vibrant colors, expressive facial reaction, dramatic lighting, high contrast, click-worthy composition, professional style',
@@ -27,7 +27,7 @@ const colorSchemeDescriptions = {
 export const generateThumbnail = async (req: Request, res: Response) => {
     try {
         console.log('📦 Request body:', req.body);
-        
+
         const { userId } = req.session || {};
         if (!userId) {
             return res.status(401).json({ message: 'User not authenticated' });
@@ -42,7 +42,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
             text_overlay
         } = req.body;
 
-        // 🔥 BULLETPROOF STRING CONVERSION - FIXES YOUR 500 ERROR
+        // 🔥 BULLETPROOF STRING CONVERSION
         const cleanStyle = typeof style === 'string' && style.trim() ? style.trim() : 'Bold & Graphic';
         const cleanAspect = typeof aspect_ratio === 'string' && aspect_ratio.trim() ? aspect_ratio.trim() : '16:9';
         const cleanColor = typeof color_scheme === 'string' && color_scheme.trim() ? color_scheme.trim() : 'vibrant';
@@ -52,9 +52,9 @@ export const generateThumbnail = async (req: Request, res: Response) => {
             title: title || '',
             prompt_used: user_prompt || '',
             user_prompt: user_prompt || '',
-            style: cleanStyle,           // ✅ ALWAYS STRING
-            aspect_ratio: cleanAspect,   // ✅ ALWAYS STRING
-            color_scheme: cleanColor,    // ✅ ALWAYS STRING
+            style: cleanStyle,
+            aspect_ratio: cleanAspect,
+            color_scheme: cleanColor,
             text_overlay: text_overlay || true,
             isGenerating: true
         };
@@ -65,7 +65,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         // SAFE prompt building
         const safeStyle = cleanStyle;
         const safeColorScheme = cleanColor;
-        
+
         let prompt = `Create a ${stylePrompts[safeStyle as keyof typeof stylePrompts] || 'bold graphic thumbnail'} for: "${title}"`;
         if (safeColorScheme && colorSchemeDescriptions[safeColorScheme as keyof typeof colorSchemeDescriptions]) {
             prompt += ` Use a ${colorSchemeDescriptions[safeColorScheme as keyof typeof colorSchemeDescriptions]} color scheme.`;
@@ -78,40 +78,46 @@ export const generateThumbnail = async (req: Request, res: Response) => {
         console.log('🎨 Generated prompt:', prompt);
 
         // POLLINATIONS.AI
-        const aspectMap: Record<string, string> = { 
-            '16:9': '1024x576', 
-            '1:1': '1024x1024', 
-            '9:16': '576x1024' 
+        const aspectMap: Record<string, string> = {
+            '16:9': '1024x576',
+            '1:1': '1024x1024',
+            '9:16': '576x1024'
         };
         const [width, height] = (aspectMap[cleanAspect] || '1024x576').split('x').map(Number);
         const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${Date.now()}&nologo=true&model=flux`;
-        
+
         console.log('🌐 Calling Pollinations.ai:', url);
-        
-        const { data: imageBuffer } = await axios.get(url, { 
-            responseType: 'arraybuffer', 
-            timeout: 45000 
+
+        const { data: imageBuffer } = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: 45000
         });
-        
+
         const finalBuffer = Buffer.from(imageBuffer);
         console.log('✅ Image generated successfully');
 
-        // CLOUDINARY UPLOAD
-        const filename = `thumbnail-${Date.now()}.png`;
-        const filepath = path.join('images', filename);
-        fs.mkdirSync('images', { recursive: true });
-        fs.writeFileSync(filepath, finalBuffer);
+        // 🔥 VERCEL COMPATIBLE - DIRECT BUFFER UPLOAD (NO FILESYSTEM)
+        const uploadResult = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+                { resource_type: 'image' },
+                (error, result) => {
+                    if (error) {
+                        console.error('Cloudinary upload failed:', error);
+                        reject(error);
+                    } else {
+                        resolve(result);
+                    }
+                }
+            );
+            uploadStream.end(finalBuffer);
+        });
 
-        const uploadResult = await cloudinary.uploader.upload(filepath, { resource_type: 'image' });
-        console.log('☁️ Cloudinary upload success:', uploadResult.url);
-
-        // UPDATE THUMBNAIL
-        thumbnail.image_url = uploadResult.url;
+        const cloudinaryResult = uploadResult as any;
+        thumbnail.image_url = cloudinaryResult.secure_url;
         thumbnail.isGenerating = false;
         await thumbnail.save();
 
-        fs.unlinkSync(filepath);
-        
+        console.log('☁️ Cloudinary upload success:', cloudinaryResult.secure_url);
         console.log('🎉 Thumbnail generation COMPLETE');
         res.json({ message: 'Thumbnail Generated', thumbnail });
 
@@ -121,15 +127,16 @@ export const generateThumbnail = async (req: Request, res: Response) => {
     }
 };
 
-export const deleteThumbnail = async(req: Request, res: Response) => {
-    try {
-        const {id} = req.params;
-        const {userId} = req.session;
 
-        await Thumbnail.findByIdAndDelete({_id: id, userId});
-        res.json({message: "Thumbnail deleted successfully"});
+export const deleteThumbnail = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.session;
+
+        await Thumbnail.findByIdAndDelete({ _id: id, userId });
+        res.json({ message: "Thumbnail deleted successfully" });
     } catch (error: any) {
         console.log(error);
-        res.status(500).json({message: error.message});
+        res.status(500).json({ message: error.message });
     }
 };
