@@ -23,9 +23,11 @@ await connectDB()
 const app = express();
 
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:3000','https://thumbnail-go-frontend.vercel.app',''],
+    origin: ['http://localhost:5173', 'http://localhost:3000','https://thumbnail-go-frontend.vercel.app'],
     credentials: true
 }))
+
+app.set('trust proxy',1)
 
 app.use(session({
 
@@ -37,7 +39,7 @@ app.use(session({
         maxAge: 1000 * 60 * 60 * 24 * 7,
         httpOnly:true,
         secure:process.env.NODE_ENV === 'production',
-        sameSite:'none',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         path:'/'
 
      }, // seven day this expire time
