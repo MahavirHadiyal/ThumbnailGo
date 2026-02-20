@@ -7,24 +7,21 @@ import { v2 as cloudinary } from "cloudinary";
 
 const stylePrompts = {
   "Bold & Graphic":
-    "eye-catching thumbnail, bold typography, vibrant colors, expressive facial reaction, dramatic lighting, high contrast, click-worthy composition",
+    "eye-catching thumbnail, bold typography, vibrant colors, dramatic lighting",
   "Tech/Futuristic":
-    "futuristic thumbnail, sleek modern design, glowing UI, cyber-tech aesthetic",
-  Minimalist:
-    "minimalist thumbnail, clean layout, simple shapes, modern flat design",
-  Photorealistic:
-    "photorealistic thumbnail, ultra-real lighting, DSLR photo style",
-  Illustrated:
-    "illustrated thumbnail, stylized characters, cartoon/vector style",
+    "futuristic thumbnail, glowing UI, cyber-tech aesthetic",
+  Minimalist: "minimalist thumbnail, clean layout, modern flat design",
+  Photorealistic: "photorealistic thumbnail, DSLR lighting",
+  Illustrated: "illustrated thumbnail, cartoon/vector style",
 };
 
 const colorSchemeDescriptions = {
-  vibrant: "vibrant energetic colors, bold contrast",
-  sunset: "warm sunset tones, orange pink purple",
-  forest: "natural green earthy tones",
-  neon: "neon glow, cyberpunk colors",
+  vibrant: "vibrant energetic colors",
+  sunset: "warm sunset tones",
+  forest: "natural green tones",
+  neon: "neon cyberpunk colors",
   purple: "purple magenta palette",
-  monochrome: "black and white high contrast",
+  monochrome: "black and white contrast",
   ocean: "cool blue teal tones",
   pastel: "soft pastel colors",
 };
@@ -33,7 +30,6 @@ export const generateThumbnail = async (req: Request, res: Response) => {
   try {
     const { userId } = req.session || {};
 
-    // 🔐 AUTH FIX
     if (!userId) {
       return res.status(401).json({ message: "User not authenticated" });
     }
@@ -50,10 +46,12 @@ export const generateThumbnail = async (req: Request, res: Response) => {
     // SAFE VALUES
     const cleanStyle =
       typeof style === "string" && style.trim() ? style.trim() : "Bold & Graphic";
+
     const cleanAspect =
       typeof aspect_ratio === "string" && aspect_ratio.trim()
         ? aspect_ratio.trim()
         : "16:9";
+
     const cleanColor =
       typeof color_scheme === "string" && color_scheme.trim()
         ? color_scheme.trim()
@@ -73,21 +71,18 @@ export const generateThumbnail = async (req: Request, res: Response) => {
 
     // BUILD PROMPT
     let prompt = `Create a ${
-      stylePrompts[cleanStyle as keyof typeof stylePrompts] ||
-      "bold thumbnail"
-    } for: "${title}"`;
+      stylePrompts[cleanStyle as keyof typeof stylePrompts] || "bold thumbnail"
+    } for "${title}"`;
 
     if (colorSchemeDescriptions[cleanColor as keyof typeof colorSchemeDescriptions]) {
-      prompt += ` Use ${colorSchemeDescriptions[
+      prompt += ` with ${colorSchemeDescriptions[
         cleanColor as keyof typeof colorSchemeDescriptions
-      ]}.`;
+      ]}`;
     }
 
-    if (user_prompt) {
-      prompt += ` ${user_prompt}.`;
-    }
+    if (user_prompt) prompt += `. ${user_prompt}`;
 
-    prompt += ` Aspect ratio ${cleanAspect}, high CTR, YouTube thumbnail.`;
+    prompt += `. YouTube thumbnail, high CTR`;
 
     // ASPECT MAP
     const aspectMap: Record<string, string> = {
@@ -100,31 +95,47 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       .split("x")
       .map(Number);
 
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(
+    // USE STABLE ENDPOINT
+    const url = `https://pollinations.ai/prompt/${encodeURIComponent(
       prompt
-    )}?width=${width}&height=${height}&seed=${Date.now()}&model=flux`;
+    )}?width=${width}&height=${height}&seed=${Date.now()}`;
 
     console.log("🎨 Generating:", url);
 
-    // RETRY LOGIC
+    // RETRY + FALLBACK
     let imageBuffer: any;
 
     for (let i = 0; i < 3; i++) {
       try {
         const response = await axios.get(url, {
           responseType: "arraybuffer",
-          timeout: 45000,
+          timeout: 60000,
           headers: {
-            "User-Agent": "Mozilla/5.0",
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             Accept: "image/*",
+            Referer: "https://pollinations.ai/",
+            Origin: "https://pollinations.ai",
           },
         });
 
         imageBuffer = response.data;
+        console.log("✅ Pollinations success");
         break;
       } catch (err) {
-        console.log(`Retry ${i + 1} failed`);
-        if (i === 2) throw err;
+        console.log(`❌ Retry ${i + 1} failed`);
+
+        // LAST RETRY → FALLBACK IMAGE
+        if (i === 2) {
+          console.log("⚠️ Using fallback image");
+
+          const fallback = await axios.get(
+            `https://picsum.photos/${width}/${height}`,
+            { responseType: "arraybuffer" }
+          );
+
+          imageBuffer = fallback.data;
+        }
       }
     }
 
@@ -150,7 +161,7 @@ export const generateThumbnail = async (req: Request, res: Response) => {
 
     res.json({ message: "Thumbnail Generated", thumbnail });
   } catch (error: any) {
-    console.error("💥 ERROR:", error);
+    console.error("💥 ERROR:", error.message);
     res.status(500).json({ message: error.message });
   }
 };
