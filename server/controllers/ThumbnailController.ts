@@ -27,13 +27,12 @@ const colorSchemeDescriptions = {
 };
 
 export const generateThumbnail = async (req: Request, res: Response) => {
-  let thumbnail;
-  
   try {
-    const { userId } = req.session || {};
+    console.log('📦 Request body:', req.body);
 
+    const { userId } = req.session || {};
     if (!userId) {
-      return res.status(401).json({ message: "User not authenticated" });
+      return res.status(401).json({ message: 'User not authenticated' });
     }
 
     const {
@@ -42,118 +41,98 @@ export const generateThumbnail = async (req: Request, res: Response) => {
       style,
       aspect_ratio,
       color_scheme,
-      text_overlay,
+      text_overlay
     } = req.body;
 
-    // SAFE VALUES
-    const cleanStyle =
-      typeof style === "string" && style.trim() 
-        ? style.trim() 
-        : "Bold & Graphic";
+    // 🔥 BULLETPROOF STRING CONVERSION
+    const cleanStyle = typeof style === 'string' && style.trim() ? style.trim() : 'Bold & Graphic';
+    const cleanAspect = typeof aspect_ratio === 'string' && aspect_ratio.trim() ? aspect_ratio.trim() : '16:9';
+    const cleanColor = typeof color_scheme === 'string' && color_scheme.trim() ? color_scheme.trim() : 'vibrant';
 
-    const cleanAspect =
-      typeof aspect_ratio === "string" && aspect_ratio.trim()
-        ? aspect_ratio.trim()
-        : "16:9";
-
-    const cleanColor =
-      typeof color_scheme === "string" && color_scheme.trim()
-        ? color_scheme.trim()
-        : "vibrant";
-
-    // CREATE DB ENTRY
-    thumbnail = await Thumbnail.create({
+    const thumbnailData = {
       userId,
-      title: title || "",
-      prompt_used: user_prompt || "",
+      title: title || '',
+      prompt_used: user_prompt || '',
+      user_prompt: user_prompt || '',
       style: cleanStyle,
       aspect_ratio: cleanAspect,
       color_scheme: cleanColor,
-      text_overlay: text_overlay ?? true,
-      isGenerating: true,
-    });
-
-    // BUILD PROMPT
-    let prompt = `Create a ${
-      stylePrompts[cleanStyle as keyof typeof stylePrompts] || "bold thumbnail"
-    }`;
-
-    if (title) prompt += ` for "${title}"`;
-
-    if (colorSchemeDescriptions[cleanColor as keyof typeof colorSchemeDescriptions]) {
-      prompt += `, ${colorSchemeDescriptions[
-        cleanColor as keyof typeof colorSchemeDescriptions
-      ]}`;
-    }
-
-    if (user_prompt) prompt += `. ${user_prompt}`;
-
-    prompt += `. YouTube thumbnail, high CTR, 16:9 composition`;
-
-    // ASPECT MAP
-    const aspectMap: Record<string, {width: number, height: number}> = {
-      "16:9": { width: 1024, height: 576 },
-      "1:1": { width: 1024, height: 1024 },
-      "9:16": { width: 576, height: 1024 },
-      "4:3": { width: 1024, height: 768 }
+      text_overlay: text_overlay || true,
+      isGenerating: true
     };
 
-    const dimensions = aspectMap[cleanAspect] || { width: 1024, height: 576 };
-    const { width, height } = dimensions;
+    const thumbnail = await Thumbnail.create(thumbnailData);
+    console.log('✅ Thumbnail created:', thumbnail._id);
 
-    console.log("🎨 Generating thumbnail with prompt:", prompt);
+    // SAFE prompt building
+    const safeStyle = cleanStyle;
+    const safeColorScheme = cleanColor;
 
-    // IMPROVED IMAGE GENERATION WITH MULTIPLE FALLBACKS
-    const imageBuffer = await generateImageWithFallbacks(prompt, width, height);
+    let prompt = `Create a ${stylePrompts[safeStyle as keyof typeof stylePrompts] || 'bold graphic thumbnail'} for: "${title}"`;
+    if (safeColorScheme && colorSchemeDescriptions[safeColorScheme as keyof typeof colorSchemeDescriptions]) {
+      prompt += ` Use a ${colorSchemeDescriptions[safeColorScheme as keyof typeof colorSchemeDescriptions]} color scheme.`;
+    }
+    if (user_prompt) {
+      prompt += ` Additional details: ${user_prompt}.`;
+    }
+    prompt += ` Thumbnail ${cleanAspect}, visually stunning, designed to maximize click-through rate. Bold, professional, impossible to ignore.`;
 
-    const finalBuffer = Buffer.from(imageBuffer);
+    console.log('🎨 Generated prompt:', prompt);
 
-    // SAVE TEMP FILE
-    const filename = `thumbnail-${Date.now()}.png`;
-    const filepath = path.join("images", filename);
-    fs.mkdirSync("images", { recursive: true });
-    fs.writeFileSync(filepath, finalBuffer);
+    // POLLINATIONS.AI
+    const aspectMap: Record<string, string> = {
+      '16:9': '1024x576',
+      '1:1': '1024x1024',
+      '9:16': '576x1024'
+    };
+    const [width, height] = (aspectMap[cleanAspect] || '1024x576').split('x').map(Number);
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${Date.now()}&nologo=true&model=flux`;
 
-    // CLOUDINARY UPLOAD
-    const uploadResult = await cloudinary.uploader.upload(filepath, {
-      resource_type: "image",
-      folder: "thumbnails",
+    console.log('🌐 Calling Pollinations.ai:', url);
+
+    const { data: imageBuffer } = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 45000
     });
 
-    // UPDATE DB
-    thumbnail.image_url = uploadResult.secure_url;
+    const finalBuffer = Buffer.from(imageBuffer);
+    console.log('✅ Image generated successfully');
+
+    // 🔥 VERCEL COMPATIBLE - DIRECT BUFFER UPLOAD (NO FILESYSTEM)
+    const uploadResult = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { resource_type: 'image' },
+        (error, result) => {
+          if (error) {
+            console.error('Cloudinary upload failed:', error);
+            reject(error);
+          } else {
+            resolve(result);
+          }
+        }
+      );
+      uploadStream.end(finalBuffer);
+    });
+
+    const cloudinaryResult = uploadResult as any;
+    thumbnail.image_url = cloudinaryResult.secure_url;
     thumbnail.isGenerating = false;
     await thumbnail.save();
 
-    fs.unlinkSync(filepath);
-
-    res.json({ 
-      message: "Thumbnail generated successfully", 
-      thumbnail 
-    });
+    console.log('☁️ Cloudinary upload success:', cloudinaryResult.secure_url);
+    console.log('🎉 Thumbnail generation COMPLETE');
+    res.json({ message: 'Thumbnail Generated', thumbnail });
 
   } catch (error: any) {
-    console.error("💥 ERROR:", error);
-
-    // Always update DB on error
-    if (thumbnail) {
-      thumbnail.isGenerating = false;
-      thumbnail.error = error.message || "Generation failed";
-      await thumbnail.save().catch(() => {}); // Fire and forget
-    }
-
-    res.status(500).json({ 
-      message: "Image generation failed but fallback used", 
-      thumbnail,
-      error: error.message 
-    });
+    console.error('💥 FULL ERROR:', error);
+    res.status(500).json({ message: error.message });
   }
 };
 
 // CORE IMAGE GENERATION WITH FAIL-SAFE FALLBACKS
 async function generateImageWithFallbacks(
-  prompt: string, 
-  width: number, 
+  prompt: string,
+  width: number,
   height: number
 ): Promise<Buffer> {
   const services = [
@@ -161,7 +140,7 @@ async function generateImageWithFallbacks(
     async () => {
       const url = `https://pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${Date.now()}`;
       console.log("🌐 Trying Pollinations.ai:", url.split('?')[0] + '?...');
-      
+
       const response = await axios.get(url, {
         responseType: "arraybuffer",
         timeout: 25000,
@@ -179,7 +158,7 @@ async function generateImageWithFallbacks(
     async () => {
       const url = `https://picsum.photos/${width}/${height}?random=${Date.now()}&blur=0.5`;
       console.log("🔄 Fallback: Picsum Photos");
-      
+
       const response = await axios.get(url, {
         responseType: "arraybuffer",
         timeout: 10000,
@@ -191,7 +170,7 @@ async function generateImageWithFallbacks(
     async () => {
       const url = `https://source.unsplash.com/featured/${width}x${height}?ai,technology,abstract`;
       console.log("🔄 Fallback: Unsplash");
-      
+
       const response = await axios.get(url, {
         responseType: "arraybuffer",
         timeout: 15000,
@@ -203,7 +182,7 @@ async function generateImageWithFallbacks(
     async () => {
       const url = `https://via.placeholder.com/${width}x${height}/4285f4/ffffff?text=AI+Thumbnail&font=roboto`;
       console.log("🔄 Ultimate fallback: Dummy image");
-      
+
       const response = await axios.get(url, {
         responseType: "arraybuffer",
         timeout: 5000,
@@ -219,12 +198,12 @@ async function generateImageWithFallbacks(
         // Backoff for retries: 1s, 2s, 4s
         await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i - 1)));
       }
-      
+
       return await services[i]();
-      
+
     } catch (error: any) {
       console.log(`❌ Service ${i + 1} failed:`, error.response?.status || error.code || error.message);
-      
+
       if (i === services.length - 1) {
         throw new Error("All image services failed");
       }
